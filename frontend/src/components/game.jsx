@@ -1,7 +1,10 @@
+'use client';
+
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import configData from "../../config/config.json";
 
 const Game = () => {
   const [questionImage, setQuestionImage] = useState('');
@@ -9,54 +12,87 @@ const Game = () => {
   const [userInput, setUserInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [showSolution, setShowSolution] = useState(false); // New state to control solution visibility
+  const [lives, setLives] = useState(3);
+  const [timeLeft, setTimeLeft] = useState(30);
+  const [gameOver, setGameOver] = useState(false);
+  const [score, setScore] = useState(0);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const response = await axios.get('https://marcconrad.com/uob/banana/api.php');
-        setQuestionImage(response.data.question);
-        setSolution(response.data.solution);
-      } catch (err) {
-        setError('Failed to fetch data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
+    fetchQuestion();
   }, []);
 
+  useEffect(() => {
+    if (timeLeft > 0 && !gameOver) {
+      const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
+      return () => clearTimeout(timer);
+    } else if (timeLeft === 0 && !gameOver) {
+      handleWrongAnswer();
+    }
+  }, [timeLeft, gameOver]);
+
+  const fetchQuestion = async () => {
+    setLoading(true);
+    try {
+      const response = await axios.get('https://marcconrad.com/uob/banana/api.php');
+      setQuestionImage(response.data.question);
+      setSolution(response.data.solution);
+      setTimeLeft(30);
+    } catch (err) {
+      setError('Failed to fetch data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleInput = (value) => {
-    if (userInput.length < 2) { // limit to two digits for user input
+    if (userInput.length < 2) {
       setUserInput(userInput + value);
     }
   };
 
   const checkAnswer = () => {
-    if (userInput == solution) {
+    if (parseInt(userInput) === solution) {
       toast.success('Correct! 🎉');
-      setShowSolution(true); // Show solution if correct
+      setScore((prevScore) => prevScore + 10);
+      fetchQuestion();
+      setUserInput('');
     } else {
       toast.error('Oops! That answer is wrong. ❌');
-      setShowSolution(false); // Hide solution if wrong
+      handleWrongAnswer();
+    }
+  };
+
+  const handleWrongAnswer = () => {
+    setLives((prevLives) => prevLives - 1);
+    if (lives <= 1) {
+      setGameOver(true);
+      toast.error('Game Over! 💀');
+      handleGameOver();
+    } else {
+      fetchQuestion();
+      setUserInput('');
+    }
+  };
+
+  const handleGameOver = async () => {
+    try {
+      await axios.post(`${configData.API_URL}/game/gameover`, { score }, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+    } catch (error) {
+      console.error('An error occurred during game over:', error);
     }
   };
 
   const resetGame = () => {
+    setLives(3);
+    setTimeLeft(30);
+    setGameOver(false);
+    setScore(0);
     setUserInput('');
-    setShowSolution(false); // Hide the solution when starting a new game
-    // Fetch new question
-    const fetchData = async () => {
-      try {
-        const response = await axios.get('https://marcconrad.com/uob/banana/api.php');
-        setQuestionImage(response.data.question);
-        setSolution(response.data.solution);
-      } catch (err) {
-        setError('Failed to fetch data');
-      }
-    };
-    fetchData();
+    fetchQuestion();
   };
 
   if (loading) {
@@ -80,14 +116,10 @@ const Game = () => {
           alt="Game Question"
         />
         <div className="bg-bananaYellow p-4 rounded-lg text-center mb-4">
-          <p className="text-xl font-bold text-darkBrown">
-            Solve the puzzle above!
-          </p>
-          <p className="text-lg mt-2 text-darkBrown">Solution: <span className="font-semibold">{solution}</span></p>
+          <p className="text-lg text-darkBrown">Time Left: {timeLeft} seconds</p>
+          <p className="text-lg text-darkBrown">Lives Left: {'❤️'.repeat(lives)}</p>
+          <p className="text-lg text-darkBrown">Score: {score}</p> 
           <p className="text-lg mt-2 text-darkBrown">Your Answer: <span className="font-semibold">{userInput}</span></p>
-          {showSolution && (
-            <p className="text-lg mt-2 text-darkBrown">Solution: <span className="font-semibold">{solution}</span></p>
-          )}
         </div>
         <div className="flex flex-wrap justify-center mb-4">
           {Array.from({ length: 10 }, (_, index) => (
@@ -111,7 +143,7 @@ const Game = () => {
             onClick={resetGame}
             className="px-6 py-3 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-700 transition duration-300 transform hover:scale-105 font-semibold"
           >
-            New Game
+            Restart Game
           </button>
         </div>
       </div>
